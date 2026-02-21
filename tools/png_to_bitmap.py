@@ -14,7 +14,7 @@ from PIL import Image, ImageEnhance, ImageOps
 SRC = Path(__file__).parent.parent / "hiki-ava.png"
 DST = Path(__file__).parent.parent / "src" / "hiki_bitmaps.h"
 
-W, H = 100, 130
+W, H = 150, 190
 
 
 def crop_character(img: Image.Image) -> Image.Image:
@@ -97,7 +97,7 @@ def to_monochrome_dithered(img: Image.Image) -> Image.Image:
             val = 0.4 * r + 0.4 * g + 0.2 * b
             gray_pixels[x, y] = int((val - min_val) / span * 255)
 
-    gray = ImageEnhance.Contrast(gray).enhance(2.0)
+    gray = ImageEnhance.Contrast(gray).enhance(2.5)
 
     # Floyd-Steinberg dithering (Pillow default L → 1)
     return gray.convert("1")
@@ -152,7 +152,7 @@ def generate_worried(normal_bmp: Image.Image) -> Image.Image:
 
 
 def main():
-    method = sys.argv[1] if len(sys.argv) > 1 else "threshold"
+    method = sys.argv[1] if len(sys.argv) > 1 else "dither"
     threshold = int(sys.argv[2]) if len(sys.argv) > 2 else 100
 
     print(f"Loading {SRC}...")

@@ -70,7 +70,7 @@ static int h_mem = 0, h_disk = 0;
 static int h_msgs_24h = 0;
 static char h_model[24] = "";
 
-// Screen cycling: 0=mascot, 1=dashboard, 2=network, 3=killswitch
+// Screen cycling: 0=soul, 1=breath, 2=nerves, 3=shell
 static int current_screen = 0;
 static int cycle_count = 0;
 #define SCREEN_COUNT      4
@@ -306,34 +306,50 @@ static void readSensors() {
 
 // ─── Drawing helpers ───────────────────────────────────────────
 
-static void renderCompactHeader(const char *title) {
-    Paint_DrawString_EN(20, 4, title, &Font20, WHITE, BLACK);
-    Paint_DrawLine(20, 28, 380, 28, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+// Corner brackets on 4 corners of display — cyberpunk "targeting" frame
+static void drawCornerBrackets(int arm = 15, int margin = 2) {
+    // Top-left
+    Paint_DrawLine(margin, margin, margin + arm, margin, BLACK, DOT_PIXEL_2X2, LINE_STYLE_SOLID);
+    Paint_DrawLine(margin, margin, margin, margin + arm, BLACK, DOT_PIXEL_2X2, LINE_STYLE_SOLID);
+    // Top-right
+    Paint_DrawLine(DISPLAY_W - margin - arm, margin, DISPLAY_W - margin, margin, BLACK, DOT_PIXEL_2X2, LINE_STYLE_SOLID);
+    Paint_DrawLine(DISPLAY_W - margin, margin, DISPLAY_W - margin, margin + arm, BLACK, DOT_PIXEL_2X2, LINE_STYLE_SOLID);
+    // Bottom-left
+    Paint_DrawLine(margin, DISPLAY_H - margin, margin + arm, DISPLAY_H - margin, BLACK, DOT_PIXEL_2X2, LINE_STYLE_SOLID);
+    Paint_DrawLine(margin, DISPLAY_H - margin - arm, margin, DISPLAY_H - margin, BLACK, DOT_PIXEL_2X2, LINE_STYLE_SOLID);
+    // Bottom-right
+    Paint_DrawLine(DISPLAY_W - margin - arm, DISPLAY_H - margin, DISPLAY_W - margin, DISPLAY_H - margin, BLACK, DOT_PIXEL_2X2, LINE_STYLE_SOLID);
+    Paint_DrawLine(DISPLAY_W - margin, DISPLAY_H - margin - arm, DISPLAY_W - margin, DISPLAY_H - margin, BLACK, DOT_PIXEL_2X2, LINE_STYLE_SOLID);
 }
 
-static void renderFooter() {
-    char buf[64];
-    Paint_DrawLine(20, 259, 380, 259, BLACK, DOT_PIXEL_1X1, LINE_STYLE_DOTTED);
+// Cyber header: ">> LABEL <<" + solid line below
+static void drawCyberHeader(int y, const char *label) {
+    char buf[40];
+    snprintf(buf, sizeof(buf), ">> %s <<", label);
+    Paint_DrawString_EN(12, y, buf, &Font20, WHITE, BLACK);
+    Paint_DrawLine(12, y + 22, 388, y + 22, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+}
 
-    const char *web3 = ks_ws_connected ? "ok" : "--";
-    const char *smarthome;
-    char sm_buf[16];
-    if (gw_health_received && gw_ha_reachable) {
-        if (gw_ha_errors == 0) smarthome = "no error";
-        else {
-            snprintf(sm_buf, sizeof(sm_buf), "%d error%s",
-                     gw_ha_errors, gw_ha_errors > 1 ? "s" : "");
-            smarthome = sm_buf;
-        }
-    } else { smarthome = "--"; }
-    snprintf(buf, sizeof(buf), "Web3:%s  Smart home:%s", web3, smarthome);
-    Paint_DrawString_EN(20, 263, buf, &Font16, WHITE, BLACK);
+// Double horizontal line — "data bus" separator
+static void drawDoubleLine(int y, int x1 = 8, int x2 = 392) {
+    Paint_DrawLine(x1, y, x2, y, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    Paint_DrawLine(x1, y + 3, x2, y + 3, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+}
 
-    bool isolated = (strcmp(ks_state, "isolated") == 0);
-    if (isolated) snprintf(buf, sizeof(buf), "AI: ISOLATED");
-    else if (health_received) snprintf(buf, sizeof(buf), "AI:online (%d msg/24h)", h_msgs_24h);
-    else snprintf(buf, sizeof(buf), "AI:--");
-    Paint_DrawString_EN(20, 281, buf, &Font16, WHITE, BLACK);
+// Draw truncated SS58 address: "5DcXdyxU...yc5H"
+static void drawAddress(int x, int y, const char *addr, sFONT *font) {
+    if (!addr || !addr[0]) {
+        Paint_DrawString_EN(x, y, "---", font, WHITE, BLACK);
+        return;
+    }
+    int len = strlen(addr);
+    char short_addr[20];
+    if (len > 12) {
+        snprintf(short_addr, sizeof(short_addr), "%.8s...%.4s", addr, addr + len - 4);
+    } else {
+        snprintf(short_addr, sizeof(short_addr), "%s", addr);
+    }
+    Paint_DrawString_EN(x, y, short_addr, font, WHITE, BLACK);
 }
 
 static void drawNodeCircle(int x, int y, bool online, const char *label) {
@@ -463,325 +479,337 @@ static void drawQR(int qr_x, int qr_y, int px_sz) {
                                     BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
 }
 
-// ─── Screen 0: Mascot (home screen) ───────────────────────────
+// ─── Screen 0: SOUL (identity + presence) ─────────────────────
 
-static void renderMascotPage() {
+static void renderSoulPage() {
     char buf[48];
+    drawCornerBrackets();
 
-    // Mascot bitmap — left side
+    // Mascot bitmap — left column
     const unsigned char *mascot = hasAnyProblem() ? hiki_worried : hiki_normal;
-    Paint_DrawImage(mascot, 8, 6, MASCOT_W, MASCOT_H);
+    Paint_DrawImage(mascot, 0, 8, MASCOT_W, MASCOT_H);
 
-    // Speech bubble — personality message (right of mascot, top)
+    // Name badge above mascot area
+    Paint_DrawString_EN(10, 10, "<HIKI>", &Font16, WHITE, BLACK);
+
+    // Vertical dotted separator between mascot and data
+    for (int y = 8; y < 200; y += 3)
+        Paint_SetPixel(155, y, BLACK);
+
+    // Speech bubble — right of mascot, top
     const char *msg = getPersonalityMessage();
     int msg_len = strlen(msg);
     int bw = msg_len * 11 + 12;
-    if (bw > 270) bw = 270;
+    if (bw > 225) bw = 225;
     if (bw < 100) bw = 100;
-    drawSpeechBubble(120, 4, bw, 24);
-    Paint_DrawString_EN(126, 8, msg, &Font16, WHITE, BLACK);
+    drawSpeechBubble(165, 8, bw, 24);
+    Paint_DrawString_EN(171, 12, msg, &Font16, WHITE, BLACK);
 
-    // ROOM panel — right of mascot, framed
-    int px = 118, py = 38, pw = 274, ph = 98;
-    Paint_DrawRectangle(px, py, px + pw, py + ph, BLACK, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
-    // Embedded label on top border
-    Paint_DrawRectangle(px + 8, py - 2, px + 58, py + 2, WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-    Paint_DrawString_EN(px + 10, py - 8, "ROOM", &Font16, WHITE, BLACK);
-
-    int ix = px + 10;  // inner x
+    // T/H in dotted frame
+    int tx = 165, ty = 42;
+    Paint_DrawLine(tx, ty, tx + 220, ty, BLACK, DOT_PIXEL_1X1, LINE_STYLE_DOTTED);
+    Paint_DrawLine(tx, ty + 20, tx + 220, ty + 20, BLACK, DOT_PIXEL_1X1, LINE_STYLE_DOTTED);
     if (scd4x_ok) {
-        // CO2 hero number
-        snprintf(buf, sizeof(buf), "%.0f", co2);
-        Paint_DrawString_EN(ix, py + 8, buf, &Font24, WHITE, BLACK);
-        int nd = strlen(buf);
-        Paint_DrawString_EN(ix + nd * 17 + 4, py + 14, "ppm", &Font16, WHITE, BLACK);
-
-        // Quality label — right-aligned
-        const char *label = getCO2Label();
-        int lx = px + pw - (int)strlen(label) * 11 - 10;
-        Paint_DrawString_EN(lx, py + 14, label, &Font16, WHITE, BLACK);
-
-        // CO2 bar
-        int co2v = (int)co2; if (co2v > 2000) co2v = 2000;
-        drawProgressBar(ix, py + 36, pw - 20, 8, co2v, 2000);
-
-        // Dotted sep inside panel
-        Paint_DrawLine(ix, py + 50, px + pw - 10, py + 50, BLACK, DOT_PIXEL_1X1, LINE_STYLE_DOTTED);
-
-        // Temp with thermometer icon
-        drawIconThermo(ix, py + 56);
+        drawIconThermo(tx + 4, ty + 2);
         snprintf(buf, sizeof(buf), "%.1fC", scd_temp);
-        Paint_DrawString_EN(ix + 14, py + 60, buf, &Font20, WHITE, BLACK);
-
-        // Humidity with droplet icon
-        int hx = ix + 110;
-        drawIconDrop(hx, py + 56);
+        Paint_DrawString_EN(tx + 18, ty + 3, buf, &Font16, WHITE, BLACK);
+        drawIconDrop(tx + 100, ty + 2);
         snprintf(buf, sizeof(buf), "%.0f%%", scd_hum);
-        Paint_DrawString_EN(hx + 14, py + 60, buf, &Font20, WHITE, BLACK);
-
-        // WiFi RSSI
-        int wx = ix + 210;
-        int rssi = WiFi.RSSI();
-        drawSignalBars(wx, py + 58, rssi);
-        snprintf(buf, sizeof(buf), "%ddB", rssi);
-        Paint_DrawString_EN(wx + 24, py + 60, buf, &Font16, WHITE, BLACK);
+        Paint_DrawString_EN(tx + 114, ty + 3, buf, &Font16, WHITE, BLACK);
     } else {
-        Paint_DrawString_EN(ix, py + 30, "Sensors offline", &Font20, WHITE, BLACK);
+        Paint_DrawString_EN(tx + 4, ty + 3, "Sensors: --", &Font16, WHITE, BLACK);
     }
 
-    // Status icons row — full width below mascot
-    Paint_DrawLine(8, 144, 392, 144, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-    int iy = 152;
+    // Model badge — inverted (black bg, white text)
+    int bx = 165, by = 68;
+    const char *model = h_model[0] ? h_model : "---";
+    int mbw = strlen(model) * 11 + 8;
+    Paint_DrawRectangle(bx, by, bx + mbw, by + 18, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+    Paint_DrawString_EN(bx + 4, by + 1, model, &Font16, BLACK, WHITE);
 
-    // Clock + uptime
-    drawIconClock(12, iy);
-    Paint_DrawString_EN(28, iy + 2, health_received && h_up[0] ? h_up : "--",
-                        &Font16, WHITE, BLACK);
+    // Uptime + memory
+    int sy = 90;
+    snprintf(buf, sizeof(buf), "up:%s  mem:%dM",
+             health_received && h_up[0] ? h_up : "--",
+             health_received ? h_mem : 0);
+    Paint_DrawString_EN(165, sy, buf, &Font16, WHITE, BLACK);
 
-    // Chat + messages
-    drawIconChat(120, iy);
-    if (health_received) snprintf(buf, sizeof(buf), "%d msg", h_msgs_24h);
-    else snprintf(buf, sizeof(buf), "--");
-    Paint_DrawString_EN(138, iy + 2, buf, &Font16, WHITE, BLACK);
+    // Messages
+    if (health_received)
+        snprintf(buf, sizeof(buf), "%d msg/24h", h_msgs_24h);
+    else
+        snprintf(buf, sizeof(buf), "-- msg/24h");
+    Paint_DrawString_EN(165, sy + 18, buf, &Font16, WHITE, BLACK);
 
-    // HA API
-    snprintf(buf, sizeof(buf), "HA:%s",
-             health_received ? (h_ha_api ? "ok" : "!") : "--");
-    Paint_DrawString_EN(230, iy + 2, buf, &Font16, WHITE, BLACK);
+    // Node status circles
+    int ny = sy + 40;
+    drawNodeCircle(170, ny, health_received && h_gw,   "GW");
+    drawNodeCircle(220, ny, health_received,            "AI");
+    drawNodeCircle(270, ny, health_received && h_ha,    "HA");
+    drawNodeCircle(325, ny, health_received && h_inet,  "NET");
 
-    // Model badge
-    Paint_DrawString_EN(310, iy + 2, h_model[0] ? h_model : "--", &Font16, WHITE, BLACK);
+    // ══════ Robonomics address between double lines ══════
+    int addr_y = 206;
+    drawDoubleLine(addr_y);
+    drawAddress(12, addr_y + 8, ks_address, &Font16);
+    Paint_DrawString_EN(210, addr_y + 8, "ROBONOMICS ID", &Font16, WHITE, BLACK);
+    drawDoubleLine(addr_y + 26);
 
-    // Node tiles row
-    Paint_DrawLine(8, 174, 392, 174, BLACK, DOT_PIXEL_1X1, LINE_STYLE_DOTTED);
-    int ny = 182;
-
-    drawNodeCircle(20,  ny, health_received && h_gw,  "GW");
-    drawNodeCircle(80,  ny, health_received,          "AI");
-    drawNodeCircle(140, ny, health_received && h_ha,  "HA");
-    drawNodeCircle(196, ny, health_received && h_inet, "NET");
-    drawNodeCircle(260, ny, ks_ws_connected,          "Web3");
-
-    // Smart home + killswitch status
-    int by = 200;
-    const char *smarthome;
-    char sm_buf[24];
-    if (gw_health_received && gw_ha_reachable) {
-        if (gw_ha_errors == 0) smarthome = "ok";
-        else { snprintf(sm_buf, sizeof(sm_buf), "%d err", gw_ha_errors); smarthome = sm_buf; }
-    } else { smarthome = "--"; }
-    snprintf(buf, sizeof(buf), "Home:%s", smarthome);
-    Paint_DrawString_EN(20, by, buf, &Font16, WHITE, BLACK);
-
-    bool isolated = (strcmp(ks_state, "isolated") == 0);
-    if (isolated) {
-        Paint_DrawRectangle(200, by - 1, 370, by + 16, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-        Paint_DrawString_EN(204, by, "KS: ISOLATED", &Font16, BLACK, WHITE);
-    } else if (ks_received) {
-        Paint_DrawString_EN(230, by, "KS: connected", &Font16, WHITE, BLACK);
+    // CO2 bar + status bottom row
+    int bot_y = 240;
+    if (scd4x_ok) {
+        snprintf(buf, sizeof(buf), "CO2: %.0f ppm", co2);
+        Paint_DrawString_EN(12, bot_y, buf, &Font16, WHITE, BLACK);
+        int co2v = (int)co2; if (co2v > 2000) co2v = 2000;
+        drawProgressBar(170, bot_y + 2, 100, 12, co2v, 2000);
+        Paint_DrawString_EN(276, bot_y, getCO2Label(), &Font16, WHITE, BLACK);
     }
+
+    // Bottom status line
+    int boty2 = 260;
+    snprintf(buf, sizeof(buf), "HA:%s  KS:%s",
+             health_received ? (h_ha_api ? "ok" : "!") : "--",
+             ks_received ? ks_state : "--");
+    Paint_DrawString_EN(12, boty2, buf, &Font16, WHITE, BLACK);
+
+    int rssi = WiFi.RSSI();
+    snprintf(buf, sizeof(buf), "%ddB", rssi);
+    drawSignalBars(330, boty2, rssi);
+    Paint_DrawString_EN(354, boty2 + 2, buf, &Font16, WHITE, BLACK);
 }
 
-// ─── Screen 1: Server Room (dashboard) ────────────────────────
+// ─── Screen 1: BREATH (environment + senses) ──────────────────
 
-static void renderDashboardPage() {
-    renderCompactHeader("SERVER ROOM");
-
+static void renderBreathPage() {
     char buf[48];
-    int rssi = WiFi.RSSI();
+    drawCornerBrackets();
 
-    // WiFi bars in header (right side)
-    drawSignalBars(340, 6, rssi);
-    snprintf(buf, sizeof(buf), "%ddB", rssi);
-    Paint_DrawString_EN(364, 10, buf, &Font16, WHITE, BLACK);
-
-    // ── ENVIRONMENT section ──
-    drawSectionHeader(32, "ENVIRONMENT");
+    drawCyberHeader(8, "ENVIRONMENT SCAN");
+    drawDoubleLine(32);
 
     if (scd4x_ok) {
-        // CO2 hero
-        snprintf(buf, sizeof(buf), "%.0f", co2);
-        Paint_DrawString_EN(28, 48, buf, &Font24, WHITE, BLACK);
-        Paint_DrawString_EN(28 + (int)strlen(buf) * 17 + 2, 54, "ppm", &Font16, WHITE, BLACK);
+        // CO2 hero number — large, centered
+        snprintf(buf, sizeof(buf), "CO2  %.0f  ppm", co2);
+        // Center the text
+        int tw = strlen(buf) * 17;
+        Paint_DrawString_EN((DISPLAY_W - tw) / 2, 42, buf, &Font24, WHITE, BLACK);
 
-        // Quality label in bordered box
-        const char *label = getCO2Label();
-        int ll = strlen(label);
-        int lbx = 380 - ll * 11 - 8;
-        Paint_DrawRectangle(lbx, 48, 382, 68, BLACK, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
-        Paint_DrawString_EN(lbx + 4, 50, label, &Font16, WHITE, BLACK);
-
-        // CO2 bar
+        // Triple-frame progress bar
+        int bx = 20, by = 72, bw = 360, bh = 18;
+        Paint_DrawRectangle(bx, by, bx + bw, by + bh, BLACK, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+        Paint_DrawRectangle(bx + 2, by + 2, bx + bw - 2, by + bh - 2, BLACK, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+        // Fill
         int co2v = (int)co2; if (co2v > 2000) co2v = 2000;
-        drawProgressBar(28, 74, 352, 10, co2v, 2000);
+        int fill_w = (co2v * (bw - 6)) / 2000;
+        if (fill_w > 0)
+            Paint_DrawRectangle(bx + 3, by + 3, bx + 3 + fill_w, by + bh - 3,
+                                BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+        // Quality label — inverted badge at right
+        const char *label = getCO2Label();
+        int llen = strlen(label);
+        int lbx = 380 - llen * 11 - 8;
+        Paint_DrawRectangle(lbx, by + bh + 4, 388, by + bh + 22, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+        Paint_DrawString_EN(lbx + 4, by + bh + 5, label, &Font16, BLACK, WHITE);
 
-        // Temp + humidity with icons
-        drawIconThermo(28, 90);
+        // Dotted separator
+        Paint_DrawLine(12, 100, 388, 100, BLACK, DOT_PIXEL_1X1, LINE_STYLE_DOTTED);
+
+        // Thermal panel
+        int p1x = 20, p1y = 106, p1w = 170, p1h = 40;
+        Paint_DrawRectangle(p1x, p1y, p1x + p1w, p1y + p1h, BLACK, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+        // Label on border
+        Paint_DrawRectangle(p1x + 4, p1y - 2, p1x + 78, p1y + 2, WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+        Paint_DrawString_EN(p1x + 6, p1y - 7, "THERMAL", &Font16, WHITE, BLACK);
+        drawIconThermo(p1x + 10, p1y + 10);
         snprintf(buf, sizeof(buf), "%.1f C", scd_temp);
-        Paint_DrawString_EN(42, 92, buf, &Font16, WHITE, BLACK);
+        Paint_DrawString_EN(p1x + 28, p1y + 12, buf, &Font20, WHITE, BLACK);
 
-        drawIconDrop(160, 90);
-        snprintf(buf, sizeof(buf), "%.0f%%", scd_hum);
-        Paint_DrawString_EN(176, 92, buf, &Font16, WHITE, BLACK);
+        // Moisture panel
+        int p2x = 210, p2y = 106, p2w = 170, p2h = 40;
+        Paint_DrawRectangle(p2x, p2y, p2x + p2w, p2y + p2h, BLACK, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+        Paint_DrawRectangle(p2x + 4, p2y - 2, p2x + 86, p2y + 2, WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+        Paint_DrawString_EN(p2x + 6, p2y - 7, "MOISTURE", &Font16, WHITE, BLACK);
+        drawIconDrop(p2x + 10, p2y + 10);
+        snprintf(buf, sizeof(buf), "%.0f %%", scd_hum);
+        Paint_DrawString_EN(p2x + 28, p2y + 12, buf, &Font20, WHITE, BLACK);
 
-        snprintf(buf, sizeof(buf), "MQTT:%s", mqtt_connected ? "ok" : "--");
-        Paint_DrawString_EN(280, 92, buf, &Font16, WHITE, BLACK);
+        // Dotted separator
+        Paint_DrawLine(12, 154, 388, 154, BLACK, DOT_PIXEL_1X1, LINE_STYLE_DOTTED);
     } else {
-        Paint_DrawString_EN(28, 48, "Sensors: --", &Font20, WHITE, BLACK);
+        Paint_DrawString_EN(100, 60, "Sensors: offline", &Font20, WHITE, BLACK);
+        Paint_DrawLine(12, 154, 388, 154, BLACK, DOT_PIXEL_1X1, LINE_STYLE_DOTTED);
     }
 
-    // ── NETWORK section ──
-    drawSectionHeader(112, "NETWORK");
+    // ── SYSTEM VITALS section ──
+    drawCyberHeader(160, "SYSTEM VITALS");
+    drawDoubleLine(184);
 
-    drawNodeCircle(36,  130, health_received && h_ha,   "HA");
-    if (health_received) { snprintf(buf, sizeof(buf), "%dms", h_ha_ms); Paint_DrawString_EN(66, 124, buf, &Font16, WHITE, BLACK); }
-
-    drawNodeCircle(150, 130, health_received && h_gw,   "GW");
-    if (health_received) { snprintf(buf, sizeof(buf), "%dms", h_gw_ms); Paint_DrawString_EN(182, 124, buf, &Font16, WHITE, BLACK); }
-
-    drawNodeCircle(280, 130, health_received && h_inet,  "NET");
-    if (health_received) { snprintf(buf, sizeof(buf), "%dms", h_inet_ms); Paint_DrawString_EN(322, 124, buf, &Font16, WHITE, BLACK); }
-
-    snprintf(buf, sizeof(buf), "HA API:%s",
-             health_received ? (h_ha_api ? "ok" : "FAIL") : "--");
-    Paint_DrawString_EN(28, 146, buf, &Font16, WHITE, BLACK);
-
-    // ── SYSTEM section ──
-    drawSectionHeader(164, "SYSTEM");
-
-    // Uptime + memory + disk with icons
-    drawIconClock(28, 180);
-    Paint_DrawString_EN(46, 182, health_received && h_up[0] ? h_up : "--", &Font16, WHITE, BLACK);
+    // Uptime, memory, disk with icon labels
+    int vy = 192;
+    drawIconClock(12, vy);
+    Paint_DrawString_EN(28, vy + 2, health_received && h_up[0] ? h_up : "--", &Font16, WHITE, BLACK);
 
     if (health_received) {
-        snprintf(buf, sizeof(buf), "Mem:%dM", h_mem);
-        Paint_DrawString_EN(140, 182, buf, &Font16, WHITE, BLACK);
-
-        snprintf(buf, sizeof(buf), "Disk:%d%%", h_disk);
-        Paint_DrawString_EN(250, 182, buf, &Font16, WHITE, BLACK);
-        drawProgressBar(250, 200, 120, 8, h_disk, 100);
+        snprintf(buf, sizeof(buf), "[mem] %dM", h_mem);
+        Paint_DrawString_EN(130, vy + 2, buf, &Font16, WHITE, BLACK);
+        snprintf(buf, sizeof(buf), "[dsk] %d%%", h_disk);
+        Paint_DrawString_EN(270, vy + 2, buf, &Font16, WHITE, BLACK);
     }
 
-    // AI + Web3 status
+    // AI status line
+    int ay = vy + 20;
     bool ai_isolated = (strcmp(ks_state, "isolated") == 0);
     if (ai_isolated) {
-        Paint_DrawRectangle(28, 216, 150, 234, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-        Paint_DrawString_EN(32, 218, "AI: ISOLATED", &Font16, BLACK, WHITE);
+        Paint_DrawRectangle(12, ay, 130, ay + 17, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+        Paint_DrawString_EN(16, ay + 1, "AI:ISOLATED", &Font16, BLACK, WHITE);
     } else if (health_received) {
-        snprintf(buf, sizeof(buf), "AI:online  %d msg/24h", h_msgs_24h);
-        Paint_DrawString_EN(28, 218, buf, &Font16, WHITE, BLACK);
+        snprintf(buf, sizeof(buf), "AI:online  %d msg/24h  %s", h_msgs_24h, h_model[0] ? h_model : "");
+        Paint_DrawString_EN(12, ay + 1, buf, &Font16, WHITE, BLACK);
     } else {
-        Paint_DrawString_EN(28, 218, "AI: --", &Font16, WHITE, BLACK);
-    }
-    Paint_DrawString_EN(280, 218, ks_ws_connected ? "Web3:ok" : "Web3:--", &Font16, WHITE, BLACK);
-
-    // Smart home status
-    if (gw_health_received && gw_ha_reachable) {
-        if (gw_ha_errors == 0) Paint_DrawString_EN(28, 238, "Smart home: no errors", &Font16, WHITE, BLACK);
-        else { snprintf(buf, sizeof(buf), "Smart home: %d err", gw_ha_errors); Paint_DrawString_EN(28, 238, buf, &Font16, WHITE, BLACK); }
-    } else {
-        Paint_DrawString_EN(28, 238, "Smart home: --", &Font16, WHITE, BLACK);
+        Paint_DrawString_EN(12, ay + 1, "AI: --", &Font16, WHITE, BLACK);
     }
 
-    // Bottom border (no standard footer — data is integrated)
-    Paint_DrawLine(20, 255, 380, 255, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    // HA, GW, NET status
+    int sy = ay + 20;
+    const char *ha_s = health_received ? (h_ha ? "ok" : "!") : "--";
+    const char *gw_s = health_received ? (h_gw ? "ok" : "!") : "--";
+    const char *net_s = health_received ? (h_inet ? "ok" : "!") : "--";
+    snprintf(buf, sizeof(buf), "HA:%s  GW:%s  NET:%s", ha_s, gw_s, net_s);
+    Paint_DrawString_EN(12, sy, buf, &Font16, WHITE, BLACK);
+
+    // Bottom double line + Web3/KS/WiFi
+    drawDoubleLine(sy + 20);
+    int bly = sy + 28;
+    snprintf(buf, sizeof(buf), "Web3:%s  KS:%s",
+             ks_ws_connected ? "ok" : "--",
+             ks_received ? ks_state : "--");
+    Paint_DrawString_EN(12, bly, buf, &Font16, WHITE, BLACK);
+
+    int rssi = WiFi.RSSI();
+    snprintf(buf, sizeof(buf), "WiFi:%ddB", rssi);
+    Paint_DrawString_EN(290, bly, buf, &Font16, WHITE, BLACK);
 }
 
-// ─── Screen 2: Hallway (network topology) ─────────────────────
+// ─── Screen 2: NERVES (network topology) ──────────────────────
 
-// Node box: double border when online, dotted when offline
+// Node box: double border when online, single when offline
 static void drawNodeBox(int x, int y, int w, int h, bool online) {
     Paint_DrawRectangle(x, y, x + w, y + h, BLACK, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
     if (online)
         Paint_DrawRectangle(x + 2, y + 2, x + w - 2, y + h - 2, BLACK, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
 }
 
-// Connection line: thick when healthy, thin dotted when down
+// Connection line with junction dot
 static void drawLink(int x1, int y1, int x2, int y2, bool healthy) {
     Paint_DrawLine(x1, y1, x2, y2, BLACK,
                    healthy ? DOT_PIXEL_2X2 : DOT_PIXEL_1X1,
                    healthy ? LINE_STYLE_SOLID : LINE_STYLE_DOTTED);
 }
 
-static void renderNetworkPage() {
-    Paint_DrawString_EN(20, 4, "HALLWAY", &Font20, WHITE, BLACK);
-    // WiFi bars in header
-    int rssi = WiFi.RSSI();
-    drawSignalBars(330, 4, rssi);
-    char rssi_buf[16];
-    snprintf(rssi_buf, sizeof(rssi_buf), "%ddB", rssi);
-    Paint_DrawString_EN(354, 8, rssi_buf, &Font16, WHITE, BLACK);
-    Paint_DrawLine(20, 26, 380, 26, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-
+static void renderNervePage() {
     char buf[48];
+    drawCornerBrackets();
+
+    // Header
+    drawCyberHeader(8, "NERVE MAP");
+
+    // WiFi RSSI in header right
+    int rssi = WiFi.RSSI();
+    snprintf(buf, sizeof(buf), "%ddB", rssi);
+    drawSignalBars(330, 10, rssi);
+    Paint_DrawString_EN(354, 14, buf, &Font16, WHITE, BLACK);
+
+    drawDoubleLine(32);
+
     bool inet_ok = health_received && h_inet;
     bool gw_ok = health_received && h_gw;
     bool ha_ok = health_received && h_ha;
 
-    // Internet label + status
-    Paint_DrawString_EN(160, 32, "INTERNET", &Font16, WHITE, BLACK);
+    // ── INTERNET node (top center) ──
+    int inet_x = 140, inet_y = 40, inet_w = 120, inet_h = 28;
+    drawNodeBox(inet_x, inet_y, inet_w, inet_h, inet_ok);
+    Paint_DrawString_EN(inet_x + 10, inet_y + 6, "INTERNET", &Font16, WHITE, BLACK);
     if (health_received) {
         snprintf(buf, sizeof(buf), "%dms", h_inet_ms);
-        Paint_DrawString_EN(260, 32, buf, &Font16, WHITE, BLACK);
+        Paint_DrawString_EN(inet_x + inet_w + 4, inet_y + 6, buf, &Font16, WHITE, BLACK);
     }
 
     // Connection: Internet → Gateway
-    int gw_cx = 200;
-    drawLink(gw_cx, 50, gw_cx, 64, inet_ok);
+    int cx = 200;
+    int link1_top = inet_y + inet_h;
+    int link1_bot = inet_y + inet_h + 16;
+    drawLink(cx, link1_top, cx, link1_bot, inet_ok);
+    // Junction dot
+    Paint_DrawCircle(cx, link1_top, 2, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
 
-    // Gateway box
-    int gw_x = 120, gw_y = 64, gw_w = 160, gw_h = 40;
+    // Latency label on link
+    if (health_received) {
+        snprintf(buf, sizeof(buf), "%dms", h_inet_ms > 0 ? h_inet_ms : 0);
+    }
+
+    // ── GATEWAY node ──
+    int gw_w = 150, gw_h = 42;
+    int gw_x = cx - gw_w / 2, gw_y = link1_bot;
     drawNodeBox(gw_x, gw_y, gw_w, gw_h, gw_ok);
-    Paint_DrawString_EN(gw_x + 8, gw_y + 4, "GATEWAY", &Font16, WHITE, BLACK);
-    Paint_DrawString_EN(gw_x + 8, gw_y + 20, "10.0.0.1", &Font16, WHITE, BLACK);
-    // Details beside box
-    Paint_DrawString_EN(gw_x + gw_w + 6, gw_y + 4, "OPi RV2", &Font16, WHITE, BLACK);
-    Paint_DrawString_EN(gw_x + gw_w + 6, gw_y + 20, ks_ws_connected ? "Web3:ok" : "Web3:--", &Font16, WHITE, BLACK);
+    Paint_DrawString_EN(gw_x + 6, gw_y + 4, "GATEWAY", &Font16, WHITE, BLACK);
+    Paint_DrawString_EN(gw_x + 6, gw_y + 20, "10.0.0.1 OPi", &Font16, WHITE, BLACK);
+    // Web3 status beside
+    Paint_DrawString_EN(gw_x + gw_w + 6, gw_y + 12, ks_ws_connected ? "Web3:ok" : "Web3:--", &Font16, WHITE, BLACK);
 
-    // Branch: GW → Agent and GW → HA
+    // ── Branch: GW → Agent and GW → HA ──
     int gw_bot = gw_y + gw_h;
-    int agent_cx = 85, ha_cx = 310;
-    int branch_y = gw_bot + 6;
+    int agent_cx = 90, ha_cx = 310;
+    int branch_y = gw_bot + 10;
 
-    drawLink(gw_cx, gw_bot, gw_cx, branch_y, gw_ok);
+    drawLink(cx, gw_bot, cx, branch_y - 4, gw_ok);
+    Paint_DrawCircle(cx, gw_bot, 2, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+
+    // Horizontal branch line
     Paint_DrawLine(agent_cx, branch_y, ha_cx, branch_y, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
 
-    int child_y = branch_y + 16;
+    // Vertical drops to child nodes
+    int child_y = branch_y + 14;
     drawLink(agent_cx, branch_y, agent_cx, child_y, gw_ok);
     drawLink(ha_cx, branch_y, ha_cx, child_y, ha_ok);
 
-    // Latency on branches
+    // Latency labels
     if (health_received) {
         snprintf(buf, sizeof(buf), "%dms", h_gw_ms);
-        Paint_DrawString_EN(agent_cx - 30, branch_y + 2, buf, &Font16, WHITE, BLACK);
+        Paint_DrawString_EN(agent_cx - 28, branch_y - 14, buf, &Font16, WHITE, BLACK);
         snprintf(buf, sizeof(buf), "%dms", h_ha_ms);
-        Paint_DrawString_EN(ha_cx + 6, branch_y + 2, buf, &Font16, WHITE, BLACK);
+        Paint_DrawString_EN(ha_cx + 6, branch_y - 14, buf, &Font16, WHITE, BLACK);
     }
 
-    // Agent box
-    int ag_w = 130, ag_h = 50;
+    // ── AI AGENT node ──
+    int ag_w = 120, ag_h = 48;
     drawNodeBox(agent_cx - ag_w / 2, child_y, ag_w, ag_h, health_received);
     Paint_DrawString_EN(agent_cx - ag_w / 2 + 6, child_y + 4, "AI AGENT", &Font16, WHITE, BLACK);
     Paint_DrawString_EN(agent_cx - ag_w / 2 + 6, child_y + 20, "10.0.0.2", &Font16, WHITE, BLACK);
-    Paint_DrawString_EN(agent_cx - ag_w / 2 + 6, child_y + 36, "openClaw", &Font16, WHITE, BLACK);
+    const char *model_short = h_model[0] ? h_model : "---";
+    Paint_DrawString_EN(agent_cx - ag_w / 2 + 6, child_y + 34, model_short, &Font16, WHITE, BLACK);
 
-    // HA box
+    // ── SMART HOME node ──
     drawNodeBox(ha_cx - ag_w / 2, child_y, ag_w, ag_h, ha_ok);
     Paint_DrawString_EN(ha_cx - ag_w / 2 + 6, child_y + 4, "SMART HOME", &Font16, WHITE, BLACK);
     Paint_DrawString_EN(ha_cx - ag_w / 2 + 6, child_y + 20, "10.0.0.3", &Font16, WHITE, BLACK);
-    Paint_DrawString_EN(ha_cx - ag_w / 2 + 6, child_y + 36, "HA+MQTT+Z2M", &Font16, WHITE, BLACK);
+    Paint_DrawString_EN(ha_cx - ag_w / 2 + 6, child_y + 34, "HA+MQTT", &Font16, WHITE, BLACK);
 
-    // Summary bar
-    int sum_y = child_y + ag_h + 6;
-    Paint_DrawLine(20, sum_y, 380, sum_y, BLACK, DOT_PIXEL_1X1, LINE_STYLE_DOTTED);
-    snprintf(buf, sizeof(buf), "HA API:%s",
-             health_received ? (h_ha_api ? "ok" : "fail") : "--");
-    Paint_DrawString_EN(24, sum_y + 4, buf, &Font16, WHITE, BLACK);
+    // ── Converge to TORII-INK ──
+    int torii_cx = 200;
+    int torii_y = child_y + ag_h + 16;
+    // Diagonal links from agent and HA down to torii
+    drawLink(agent_cx, child_y + ag_h, torii_cx - 30, torii_y, true);
+    drawLink(ha_cx, child_y + ag_h, torii_cx + 30, torii_y, true);
 
-    renderFooter();
+    // TORII-INK self node
+    int tw = 130, th = 28;
+    drawNodeBox(torii_cx - tw / 2, torii_y, tw, th, true);
+    Paint_DrawString_EN(torii_cx - tw / 2 + 6, torii_y + 6, "TORII-INK", &Font16, WHITE, BLACK);
+    // "[this]" marker
+    Paint_DrawString_EN(torii_cx + tw / 2 - 44, torii_y + 6, "MQTT", &Font16, WHITE, BLACK);
 }
 
-// ─── Screen 3: Front Door (killswitch) ────────────────────────
+// ─── Screen 3: SHELL (killswitch + blockchain) ────────────────
 
 // Shield icon: pointed bottom, filled or outline
 static void drawShield(int cx, int cy, int s, bool filled) {
@@ -847,12 +875,12 @@ static void drawTopology(int y, bool broken) {
     }
 }
 
-static void renderKillswitchPage() {
+static void renderShellPage() {
     if (!ks_received) {
-        renderCompactHeader("FRONT DOOR");
+        drawCornerBrackets();
+        drawCyberHeader(8, "SHELL");
         Paint_DrawString_EN(100, 100, "Waiting for", &Font20, WHITE, BLACK);
         Paint_DrawString_EN(80, 130, "killswitch data...", &Font20, WHITE, BLACK);
-        renderFooter();
         return;
     }
 
@@ -860,9 +888,9 @@ static void renderKillswitchPage() {
 
     if (connected) {
         // ── CONNECTED: calm, reassuring ──
-        Paint_DrawString_EN(20, 4, "FRONT DOOR", &Font20, WHITE, BLACK);
-        drawShield(370, 16, 12, true);
-        Paint_DrawLine(20, 28, 380, 28, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+        drawCornerBrackets();
+        drawCyberHeader(8, "SHELL");
+        drawShield(370, 18, 12, true);
 
         // QR on left
         drawQR(20, 38, 3);
@@ -878,19 +906,29 @@ static void renderKillswitchPage() {
         Paint_DrawString_EN(170, 140, "Agent has full", &Font16, WHITE, BLACK);
         Paint_DrawString_EN(170, 158, "network access.", &Font16, WHITE, BLACK);
 
+        // Block number + address
+        drawDoubleLine(178);
+        char bbuf[48];
+        if (ks_block_number > 0) {
+            snprintf(bbuf, sizeof(bbuf), "Block: #%d", ks_block_number);
+            Paint_DrawString_EN(20, 186, bbuf, &Font16, WHITE, BLACK);
+        }
+        drawAddress(200, 186, ks_address, &Font16);
+        drawDoubleLine(204);
+
         // Topology
-        Paint_DrawLine(20, 180, 380, 180, BLACK, DOT_PIXEL_1X1, LINE_STYLE_DOTTED);
-        drawTopology(206, false);
+        Paint_DrawLine(20, 212, 380, 212, BLACK, DOT_PIXEL_1X1, LINE_STYLE_DOTTED);
+        drawTopology(236, false);
 
         // WS status
         char ws_buf[32];
         snprintf(ws_buf, sizeof(ws_buf), "WS: %s", ks_ws_connected ? "connected" : "disconnected");
-        Paint_DrawString_EN(20, 228, ws_buf, &Font16, WHITE, BLACK);
-
-        renderFooter();
+        Paint_DrawString_EN(20, 260, ws_buf, &Font16, WHITE, BLACK);
 
     } else {
         // ── ISOLATED: dramatic, alarming ──
+        // Corner brackets still visible
+        drawCornerBrackets();
 
         // Full black banner header
         Paint_DrawRectangle(0, 0, 399, 50, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
@@ -954,10 +992,10 @@ static void renderScreen(bool full_refresh) {
     Paint_Clear(WHITE);
 
     switch (current_screen) {
-        case 0: renderMascotPage();       break;
-        case 1: renderDashboardPage();    break;
-        case 2: renderNetworkPage();      break;
-        case 3: renderKillswitchPage();   break;
+        case 0: renderSoulPage();    break;
+        case 1: renderBreathPage();  break;
+        case 2: renderNervePage();   break;
+        case 3: renderShellPage();   break;
     }
 
     if (full_refresh) {
