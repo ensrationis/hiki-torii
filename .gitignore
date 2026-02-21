@@ -1,0 +1,6 @@
+.pio/
+builds/
+.vscode/
+experimets_photos/
+src/config.h
+

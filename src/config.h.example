@@ -1,0 +1,9 @@
+#pragma once
+
+#define WIFI_SSID     "your-ssid"
+#define WIFI_PASSWORD "your-password"
+
+#define MQTT_SERVER   "192.168.1.100"
+#define MQTT_PORT     1883
+
+#define DEVICE_ID     "torii-ink"
