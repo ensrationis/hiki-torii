@@ -68,6 +68,7 @@ static int h_ha_ms = 0, h_gw_ms = 0, h_inet_ms = 0;
 static char h_up[16] = "";
 static int h_mem = 0, h_disk = 0;
 static int h_msgs_24h = 0;
+static char h_model[24] = "";
 
 // Screen cycling: 0=mascot, 1=dashboard, 2=network, 3=killswitch
 static int current_screen = 0;
@@ -136,6 +137,7 @@ static void mqttCallback(char *topic, byte *payload, unsigned int length) {
         h_disk = jsonInt(buf, "disk");
         h_msgs_24h = jsonInt(buf, "msgs_24h");
         jsonStr(buf, "up", h_up, sizeof(h_up));
+        jsonStr(buf, "model", h_model, sizeof(h_model));
 
         health_received = true;
         Serial.println("Health data parsed OK");
@@ -547,7 +549,7 @@ static void renderMascotPage() {
     Paint_DrawString_EN(230, iy + 2, buf, &Font16, WHITE, BLACK);
 
     // Model badge
-    Paint_DrawString_EN(310, iy + 2, "Sonnet4.5", &Font16, WHITE, BLACK);
+    Paint_DrawString_EN(310, iy + 2, h_model[0] ? h_model : "--", &Font16, WHITE, BLACK);
 
     // Node tiles row
     Paint_DrawLine(8, 174, 392, 174, BLACK, DOT_PIXEL_1X1, LINE_STYLE_DOTTED);
