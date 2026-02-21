@@ -75,7 +75,7 @@ static int cycle_count = 0;
 #define SCREEN_COUNT      4
 #define CYCLE_MS          10000       // switch screens every 10s
 #define SENSOR_EVERY_N    6           // read+publish sensors every 6 cycles (60s)
-#define FULL_REFRESH_EVERY_N 30       // full e-ink refresh every 30 cycles (~5min)
+#define FULL_REFRESH_EVERY_N 5        // full e-ink refresh every 5 cycles (~50s)
 
 // ─── JSON helpers ──────────────────────────────────────────────
 
