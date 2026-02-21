@@ -630,7 +630,7 @@ bool EPD_4IN2_V2_PartialDisplay(UBYTE *Image, UWORD Xstart, UWORD Ystart, UWORD 
     for (UWORD j = 0; j < IMAGE_COUNTER; j++) {
             EPD_4IN2_V2_SendData(Image[j]);
     }
-	
+
 	return EPD_4IN2_V2_TurnOnDisplay_Partial();
 }
 /******************************************************************************

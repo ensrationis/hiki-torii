@@ -74,9 +74,9 @@ static char h_model[24] = "";
 static int current_screen = 0;
 static int cycle_count = 0;
 #define SCREEN_COUNT      4
-#define CYCLE_MS          10000       // switch screens every 10s
+#define CYCLE_MS          20000       // switch screens every 20s
 #define SENSOR_EVERY_N    6           // read+publish sensors every 6 cycles (60s)
-#define FULL_REFRESH_EVERY_N 5        // full e-ink refresh every 5 cycles (~50s)
+#define FULL_REFRESH_EVERY_N 3        // full e-ink refresh every 3 cycles (~60s)
 
 // ─── JSON helpers ──────────────────────────────────────────────
 
@@ -243,6 +243,7 @@ static void initDisplay() {
     DEV_Module_Init();
     EPD_4IN2_V2_Init();
     EPD_4IN2_V2_Clear();
+    EPD_4IN2_V2_Init_Fast(Seconds_1_5S);
 
     uint32_t imageSize = ((DISPLAY_W % 8 == 0) ? (DISPLAY_W / 8) : (DISPLAY_W / 8 + 1)) * DISPLAY_H;
     framebuffer = (UBYTE *)malloc(imageSize);
@@ -960,9 +961,14 @@ static void renderScreen(bool full_refresh) {
     }
 
     if (full_refresh) {
+        // Deep clean: full init + full waveform
+        EPD_4IN2_V2_Init();
         EPD_4IN2_V2_Display(framebuffer);
+        // Switch back to fast mode for subsequent updates
+        EPD_4IN2_V2_Init_Fast(Seconds_1_5S);
     } else {
-        EPD_4IN2_V2_PartialDisplay(framebuffer);
+        // Fast refresh: writes both registers, no ghosting, minimal flicker
+        EPD_4IN2_V2_Display_Fast(framebuffer);
     }
 }
 
