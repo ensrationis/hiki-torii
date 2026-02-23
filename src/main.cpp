@@ -536,103 +536,87 @@ static void renderHomePage() {
     char buf[48];
     int rx = Layout::RIGHT_COL;  // 160
 
-    // Mascot bitmap — left column
+    // ── Left column: Mascot ──
     const unsigned char *mascot = hasAnyProblem() ? hiki_worried : hiki_normal;
     Paint_DrawImage(mascot, 0, 8, MASCOT_W, MASCOT_H);
 
-    // Name badge overlaying mascot top
-    Paint_DrawString_EN(10, 10, "<HIKI>", &Font16, WHITE, BLACK);
-
-    // Vertical dotted separator between mascot and data
-    for (int y = 8; y < 196; y += 3)
+    // Vertical dotted separator
+    for (int y = 8; y < 198; y += 3)
         Paint_SetPixel(155, y, BLACK);
 
-    // ── Right column ──
+    // ── Right column: Device Identity ──
 
-    // Speech bubble
+    // Name badge
+    drawBadge(rx, 8, "<HIKI>", &Font16);
+
+    // QR code (Robonomics ID)
+    drawQR(rx + 4, 30, 2);  // 164,30 — 82×82
+
+    // Address below QR
+    drawAddress(rx + 4, 120, killswitch.address, &Font16);
+    drawBlockNumber(rx + 4, 138, &Font16);
+
+    // Speech bubble with personality message
     const char *msg = getPersonalityMessage();
     int msg_len = strlen(msg);
     if (msg_len > 19) msg_len = 19;
     int bw = msg_len * Layout::FONT16_W + 12;
     if (bw < 100) bw = 100;
-    drawSpeechBubble(165, 8, bw, 24);
-    Paint_DrawString_EN(171, 12, msg, &Font16, WHITE, BLACK);
+    drawSpeechBubble(rx + 5, 160, bw, 24);
+    Paint_DrawString_EN(rx + 11, 164, msg, &Font16, WHITE, BLACK);
 
-    // CO2 line + progress bar
+    // ── Separator ──
+    drawDoubleLine(198);
+
+    // ── Data section ──
+
+    // Temperature (Font24, prominent)
     if (sensor.ok) {
-        snprintf(buf, sizeof(buf), "CO2: %.0f ppm", sensor.co2);
-        Paint_DrawString_EN(rx, 38, buf, &Font16, WHITE, BLACK);
-        int co2v = clampedCO2();
-        drawProgressBar(rx + 150, 40, 80, 12, co2v, Layout::CO2_MAX);
-        Paint_DrawString_EN(rx, 56, getCO2Label(), &Font16, WHITE, BLACK);
+        drawIconThermo(12, 206);
+        snprintf(buf, sizeof(buf), "%.1f C", sensor.temp);
+        Paint_DrawString_EN(30, 206, buf, &Font24, WHITE, BLACK);
     } else {
-        Paint_DrawString_EN(rx, 38, "CO2: --", &Font16, WHITE, BLACK);
+        Paint_DrawString_EN(12, 206, "Temp: --", &Font24, WHITE, BLACK);
     }
 
-    // Dotted separator (right column only)
-    Paint_DrawLine(rx, 70, Layout::MARGIN_R, 70, BLACK, DOT_PIXEL_1X1, LINE_STYLE_DOTTED);
+    drawDottedLine(232);
 
-    // Temperature / Humidity
-    if (sensor.ok) {
-        drawIconThermo(rx, 74);
-        snprintf(buf, sizeof(buf), "%.1fC", sensor.temp);
-        Paint_DrawString_EN(rx + 16, 76, buf, &Font16, WHITE, BLACK);
-        drawIconDrop(rx + 90, 74);
-        snprintf(buf, sizeof(buf), "%.0f%%", sensor.hum);
-        Paint_DrawString_EN(rx + 106, 76, buf, &Font16, WHITE, BLACK);
-    } else {
-        Paint_DrawString_EN(rx, 76, "Sensors: --", &Font16, WHITE, BLACK);
-    }
+    // Connection status: AI → HA → GW (priority order)
+    int ny = 244;
+    drawNodeCircle(18, ny, health.received, "AI");
+    drawNodeCircle(80, ny, health.received && health.ha, "HA");
+    drawNodeCircle(142, ny, health.received && health.gw, "GW");
+    drawSignalBars(330, 237, WiFi.RSSI());
+    snprintf(buf, sizeof(buf), "%ddB", WiFi.RSSI());
+    Paint_DrawString_EN(352, 239, buf, &Font16, WHITE, BLACK);
 
-    // Dotted separator
-    Paint_DrawLine(rx, 92, Layout::MARGIN_R, 92, BLACK, DOT_PIXEL_1X1, LINE_STYLE_DOTTED);
+    drawDottedLine(256);
 
-    // Model badge
-    char model_buf[20];
+    // Killswitch state (badge) + GW Web3 (plain, labeled)
+    snprintf(buf, sizeof(buf), "KS:%s",
+             killswitch.received ? killswitch.state : "---");
+    drawBadge(12, 260, buf, &Font16);
+    snprintf(buf, sizeof(buf), "GW Web3:%s",
+             killswitch.ws_connected ? "ok" : "--");
+    Paint_DrawString_EN(220, 262, buf, &Font16, WHITE, BLACK);
+
+    drawDottedLine(278);
+
+    // Model badge + uptime/msgs/mem
+    char model_buf[16];
     if (health.model[0]) {
-        snprintf(model_buf, sizeof(model_buf), "%.18s", health.model);
+        snprintf(model_buf, sizeof(model_buf), "%.14s", health.model);
     } else {
         strcpy(model_buf, "---");
     }
-    drawBadge(rx, 96, model_buf, &Font16);
-
-    // Uptime + memory + messages
-    snprintf(buf, sizeof(buf), "up:%.5s %dM %dmsg",
+    drawBadge(12, 282, model_buf, &Font16);
+    snprintf(buf, sizeof(buf), "up:%.5s %dmsg %dM",
              health.received && health.up[0] ? health.up : "--",
-             health.received ? health.mem : 0,
-             health.received ? health.msgs_24h : 0);
-    Paint_DrawString_EN(rx, 116, buf, &Font16, WHITE, BLACK);
+             health.received ? health.msgs_24h : 0,
+             health.received ? health.mem : 0);
+    Paint_DrawString_EN(180, 284, buf, &Font16, WHITE, BLACK);
 
-    // Dotted separator
-    Paint_DrawLine(rx, 132, Layout::MARGIN_R, 132, BLACK, DOT_PIXEL_1X1, LINE_STYLE_DOTTED);
-
-    // Node circles + WiFi signal
-    int ny = 142;
-    drawNodeCircle(rx + 6, ny, health.received && health.ha, "HA");
-    drawNodeCircle(rx + 50, ny, health.received && health.gw, "GW");
-    drawNodeCircle(rx + 94, ny, health.received, "AI");
-    drawNodeCircle(rx + 138, ny, health.received && health.inet, "NET");
-    drawSignalBars(rx + 190, ny - 7, WiFi.RSSI());
-
-    // KS + Web3 status
-    snprintf(buf, sizeof(buf), "KS:%s Web3:%s",
-             killswitch.received ? killswitch.state : "--",
-             killswitch.ws_connected ? "ok" : "--");
-    Paint_DrawString_EN(rx, 158, buf, &Font16, WHITE, BLACK);
-
-    // ══════ Bottom zone: QR + address ══════
-    drawDoubleLine(196);
-
-    // QR code (px_sz=2, 82x82) on left
-    drawQR(10, 206, 2);
-
-    // Address info right of QR
-    int ax = 100;
-    Paint_DrawString_EN(ax, 206, "ROBONOMICS ID", &Font16, WHITE, BLACK);
-    drawAddress(ax, 224, killswitch.address, &Font16);
-    drawBlockNumber(ax, 246, &Font16);
-
-    drawDoubleLine(290);
+    drawDoubleLine(296);
 }
 
 // ─── Screen: BREATH (environment detail) ───────────────────────
