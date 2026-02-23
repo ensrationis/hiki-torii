@@ -447,6 +447,65 @@ static void drawIconClock(int x, int y) {
     Paint_DrawCircle(cx, cy, 1, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
 }
 
+// Chip icon for AI Agent (16×16)
+static void drawIconAgent(int x, int y, bool online) {
+    // Chip body
+    Paint_DrawRectangle(x+4, y+2, x+11, y+12, BLACK, DOT_PIXEL_1X1,
+                        online ? DRAW_FILL_FULL : DRAW_FILL_EMPTY);
+    // Side pins (4 pairs)
+    for (int i = 0; i < 4; i++) {
+        int py = y + 4 + i * 2;
+        Paint_DrawLine(x+2, py, x+4, py, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+        Paint_DrawLine(x+11, py, x+13, py, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    }
+    // Core
+    if (online)
+        Paint_DrawRectangle(x+6, y+6, x+9, y+8, WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+    else
+        Paint_DrawCircle(x+7, y+7, 1, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+}
+
+// House icon for Smart Home (16×16)
+static void drawIconHome(int x, int y, bool online) {
+    int peak_x = x + 7, peak_y = y + 2;
+    int roof_l = x + 2, roof_r = x + 12, roof_base = y + 7;
+    // Roof lines
+    Paint_DrawLine(peak_x, peak_y, roof_l, roof_base, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    Paint_DrawLine(peak_x, peak_y, roof_r, roof_base, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    // Walls
+    Paint_DrawRectangle(roof_l, roof_base, roof_r, y+13, BLACK, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+    if (online) {
+        // Fill roof
+        for (int row = peak_y + 1; row < roof_base; row++) {
+            int half_w = row - peak_y;
+            Paint_DrawLine(peak_x - half_w, row, peak_x + half_w, row,
+                           BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+        }
+        // Fill walls
+        Paint_DrawRectangle(roof_l, roof_base, roof_r, y+13, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+        // Door cutout
+        Paint_DrawRectangle(x+5, y+10, x+8, y+13, WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+    } else {
+        // Door outline
+        Paint_DrawRectangle(x+5, y+10, x+7, y+13, BLACK, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+    }
+}
+
+// Router icon for Gateway (16×16)
+static void drawIconGateway(int x, int y, bool online) {
+    // Device body
+    Paint_DrawRectangle(x+2, y+6, x+13, y+12, BLACK, DOT_PIXEL_1X1,
+                        online ? DRAW_FILL_FULL : DRAW_FILL_EMPTY);
+    // Antennas
+    Paint_DrawLine(x+6, y+6, x+2, y+1, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    Paint_DrawLine(x+9, y+6, x+13, y+1, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    // LED indicators
+    UWORD led_color = online ? WHITE : BLACK;
+    Paint_SetPixel(x+5, y+9, led_color);
+    Paint_SetPixel(x+8, y+9, led_color);
+    Paint_SetPixel(x+11, y+9, led_color);
+}
+
 static void drawSignalBars(int x, int y, int rssi) {
     int bars = (rssi > -50) ? 4 : (rssi > -60) ? 3 : (rssi > -70) ? 2 : (rssi > -80) ? 1 : 0;
     for (int i = 0; i < 4; i++) {
@@ -546,24 +605,21 @@ static void renderHomePage() {
 
     // ── Right column: Device Identity ──
 
-    // Name badge
-    drawBadge(rx, 8, "<HIKI>", &Font16);
-
-    // QR code (Robonomics ID)
-    drawQR(rx + 4, 30, 2);  // 164,30 — 82×82
-
-    // Address below QR
-    drawAddress(rx + 4, 120, killswitch.address, &Font16);
-    drawBlockNumber(rx + 4, 138, &Font16);
-
-    // Speech bubble with personality message
+    // Speech bubble at top
     const char *msg = getPersonalityMessage();
     int msg_len = strlen(msg);
     if (msg_len > 19) msg_len = 19;
     int bw = msg_len * Layout::FONT16_W + 12;
     if (bw < 100) bw = 100;
-    drawSpeechBubble(rx + 5, 160, bw, 24);
-    Paint_DrawString_EN(rx + 11, 164, msg, &Font16, WHITE, BLACK);
+    drawSpeechBubble(rx + 5, 8, bw, 24);
+    Paint_DrawString_EN(rx + 11, 12, msg, &Font16, WHITE, BLACK);
+
+    // QR code (Robonomics ID)
+    drawQR(rx + 4, 36, 3);  // 164,36 — 123×123 (41 modules × 3px)
+
+    // Address below QR
+    drawAddress(rx + 4, 163, killswitch.address, &Font16);
+    drawBlockNumber(rx + 4, 181, &Font16);
 
     // ── Separator ──
     drawDoubleLine(198);
@@ -572,51 +628,53 @@ static void renderHomePage() {
 
     // Temperature (Font24, prominent)
     if (sensor.ok) {
-        drawIconThermo(12, 206);
+        drawIconThermo(12, 205);
         snprintf(buf, sizeof(buf), "%.1f C", sensor.temp);
-        Paint_DrawString_EN(30, 206, buf, &Font24, WHITE, BLACK);
+        Paint_DrawString_EN(30, 205, buf, &Font24, WHITE, BLACK);
     } else {
-        Paint_DrawString_EN(12, 206, "Temp: --", &Font24, WHITE, BLACK);
+        Paint_DrawString_EN(12, 205, "Temp: --", &Font24, WHITE, BLACK);
     }
 
-    drawDottedLine(232);
+    // Connection status with icons: Agent → Home → Gateway
+    int iy = 232;  // icon row top
+    bool agent_ok = health.received;
+    bool home_ok  = health.received && health.ha;
+    bool gw_ok    = health.received && health.gw;
 
-    // Connection status: AI → HA → GW (priority order)
-    int ny = 244;
-    drawNodeCircle(18, ny, health.received, "AI");
-    drawNodeCircle(80, ny, health.received && health.ha, "HA");
-    drawNodeCircle(142, ny, health.received && health.gw, "GW");
-    drawSignalBars(330, 237, WiFi.RSSI());
-    snprintf(buf, sizeof(buf), "%ddB", WiFi.RSSI());
-    Paint_DrawString_EN(352, 239, buf, &Font16, WHITE, BLACK);
+    drawIconAgent(12, iy, agent_ok);
+    snprintf(buf, sizeof(buf), "Agent:%s", agent_ok ? "ok" : "offline");
+    Paint_DrawString_EN(30, iy + 1, buf, &Font16, WHITE, BLACK);
 
-    drawDottedLine(256);
+    drawIconHome(140, iy, home_ok);
+    snprintf(buf, sizeof(buf), "Home:%s", home_ok ? "ok" : "offline");
+    Paint_DrawString_EN(158, iy + 1, buf, &Font16, WHITE, BLACK);
 
-    // Killswitch state (badge) + GW Web3 (plain, labeled)
-    snprintf(buf, sizeof(buf), "KS:%s",
+    drawIconGateway(268, iy, gw_ok);
+    snprintf(buf, sizeof(buf), "GW:%s", gw_ok ? "ok" : "offline");
+    Paint_DrawString_EN(286, iy + 1, buf, &Font16, WHITE, BLACK);
+
+    drawDottedLine(250);
+
+    // Killswitch state: badge only for alarm, plain text otherwise
+    bool ks_isolated = isIsolated();
+    snprintf(buf, sizeof(buf), "Killswitch: %s",
              killswitch.received ? killswitch.state : "---");
-    drawBadge(12, 260, buf, &Font16);
-    snprintf(buf, sizeof(buf), "GW Web3:%s",
-             killswitch.ws_connected ? "ok" : "--");
-    Paint_DrawString_EN(220, 262, buf, &Font16, WHITE, BLACK);
-
-    drawDottedLine(278);
-
-    // Model badge + uptime/msgs/mem
-    char model_buf[16];
-    if (health.model[0]) {
-        snprintf(model_buf, sizeof(model_buf), "%.14s", health.model);
+    if (ks_isolated) {
+        drawBadge(12, 254, buf, &Font16);
     } else {
-        strcpy(model_buf, "---");
+        Paint_DrawString_EN(12, 256, buf, &Font16, WHITE, BLACK);
     }
-    drawBadge(12, 282, model_buf, &Font16);
-    snprintf(buf, sizeof(buf), "up:%.5s %dmsg %dM",
-             health.received && health.up[0] ? health.up : "--",
-             health.received ? health.msgs_24h : 0,
-             health.received ? health.mem : 0);
-    Paint_DrawString_EN(180, 284, buf, &Font16, WHITE, BLACK);
+    drawSignalBars(365, 254, WiFi.RSSI());
 
-    drawDoubleLine(296);
+    // Footer: Web3 chain + uptime + messages
+    Paint_DrawString_EN(12, 274, killswitch.ws_connected ? "Web3 chain: ok" : "Web3 chain: --",
+                        &Font16, WHITE, BLACK);
+    snprintf(buf, sizeof(buf), "up: %.5s  %d msg",
+             health.received && health.up[0] ? health.up : "--",
+             health.received ? health.msgs_24h : 0);
+    Paint_DrawString_EN(220, 274, buf, &Font16, WHITE, BLACK);
+
+    drawDoubleLine(290);
 }
 
 // ─── Screen: BREATH (environment detail) ───────────────────────
